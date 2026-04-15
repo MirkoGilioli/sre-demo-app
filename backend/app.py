@@ -147,7 +147,7 @@ def create_event():
                 "timestamp": ts,
                 "inserted_at": now # Record the actual time it was saved
             }
-            logger.info(f"Adding event to Firestore: {data['title']}")
+            logger.info(f"Adding event to Firestore: {json.dumps({'title': event_data['title'], 'id': doc_id if 'doc_id' in locals() else 'auto'})}")
             
             # Let Firestore generate a random, distributed ID (Best Practice)
             _, doc_ref = db.collection(COLLECTION_NAME).add(event_data)
