@@ -1,15 +1,32 @@
-let backendUrl = localStorage.getItem('backend_url');
-
-// If on localhost and no URL is saved, default to the local backend port
-if (!backendUrl && window.location.hostname === 'localhost') {
-    backendUrl = 'http://localhost:8081/';
-} else {
-    backendUrl = backendUrl || "";
-}
+let backendUrl = "";
+let config = {};
 
 const statusEl = document.getElementById('status');
 const backendUrlInput = document.getElementById('backend-url');
-backendUrlInput.value = backendUrl;
+
+// Load YAML Config
+async function initApp() {
+    try {
+        const response = await fetch('config/config.yaml');
+        const yamlText = await response.text();
+        config = jsyaml.load(yamlText);
+        console.log("Configuration loaded from config.yaml:", config);
+        
+        // Priority: localStorage -> config.yaml -> hardcoded fallback
+        backendUrl = localStorage.getItem('backend_url');
+        if (!backendUrl) {
+            backendUrl = config.backend_url || "http://localhost:8081/";
+        }
+        
+        backendUrlInput.value = backendUrl;
+        if (backendUrl) loadEvents();
+    } catch (error) {
+        console.warn("Could not load config/config.yaml, falling back to defaults.", error);
+        backendUrl = localStorage.getItem('backend_url') || "http://localhost:8081/";
+        backendUrlInput.value = backendUrl;
+        if (backendUrl) loadEvents();
+    }
+}
 
 function saveConfig() {
     let url = backendUrlInput.value.trim();
@@ -231,6 +248,5 @@ async function resetChaos() {
 }
 
 // Init
-if (backendUrl) {
-    loadEvents();
-}
+initApp();
+renderCalendar();

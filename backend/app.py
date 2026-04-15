@@ -3,6 +3,7 @@ import random
 import time
 import logging
 import json
+import yaml
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google.cloud import firestore
@@ -14,6 +15,23 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
 from opentelemetry.sdk.resources import Resource
+
+# Load Configuration
+def load_config():
+    config_path = os.getenv("CONFIG_PATH", "config/config.yaml")
+    try:
+        with open(config_path, 'r') as f:
+            return yaml.safe_load(f)
+    except Exception as e:
+        print(f"Error loading config from {config_path}: {e}")
+        # Return defaults if file not found
+        return {
+            "firestore": {"database_id": "sre-demo", "collection_name": "agenda_events"},
+            "opentelemetry": {"service_name": "agenda-backend", "service_namespace": "sre-demo"},
+            "chaos": {"default_latency_ms": 0, "default_error_rate": 0.0}
+        }
+
+config = load_config()
 
 # Setup Logging
 if os.getenv("K_SERVICE"): # Running on Cloud Run
@@ -30,8 +48,8 @@ CORS(app)
 
 # OpenTelemetry Setup
 resource = Resource.create({
-    "service.name": "agenda-backend",
-    "service.namespace": "sre-demo",
+    "service.name": config["opentelemetry"]["service_name"],
+    "service.namespace": config["opentelemetry"]["service_namespace"],
 })
 
 tracer_provider = TracerProvider(resource=resource)
@@ -46,16 +64,21 @@ FlaskInstrumentor().instrument_app(app)
 tracer = trace.get_tracer(__name__)
 
 # Firestore Setup
+DB_NAME = config["firestore"]["database_id"]
+COLLECTION_NAME = config["firestore"]["collection_name"]
+
 emulator_host = os.getenv("FIRESTORE_EMULATOR_HOST")
 if emulator_host:
-    logger.info(f"Connecting to Firestore Emulator at {emulator_host}")
-db = firestore.Client()
-COLLECTION_NAME = "agenda_events"
+    logger.info(f"Connecting to Firestore Emulator at {emulator_host} with DB {DB_NAME}")
+    db = firestore.Client(database=DB_NAME)
+else:
+    logger.info(f"Connecting to Firestore Cloud DB {DB_NAME}")
+    db = firestore.Client(database=DB_NAME)
 
 # Chaos State
 chaos_state = {
-    "latency_ms": 0,
-    "error_rate": 0.0
+    "latency_ms": config["chaos"]["default_latency_ms"],
+    "error_rate": config["chaos"]["default_error_rate"]
 }
 
 @app.before_request
@@ -107,12 +130,15 @@ def create_event():
             return jsonify({"error": "Missing title"}), 400
         
         with tracer.start_as_current_span("create_event_firestore"):
-            # Use provided timestamp or fallback to server timestamp
-            ts = firestore.SERVER_TIMESTAMP
+            from datetime import datetime, timezone
+            # Generate a unique ID based on the exact insertion time (microseconds)
+            now = datetime.now(timezone.utc)
+            doc_id = str(int(now.timestamp() * 1000000))
+
+            # Use provided calendar timestamp or fallback to 'now'
+            ts = now
             if data.get('timestamp'):
                 try:
-                    # Expecting ISO format from frontend
-                    from datetime import datetime
                     ts = datetime.fromisoformat(data['timestamp'].replace('Z', '+00:00'))
                 except Exception as te:
                     logger.warning(f"Failed to parse provided timestamp {data.get('timestamp')}: {te}")
@@ -120,14 +146,16 @@ def create_event():
             event_data = {
                 "title": data['title'],
                 "description": data.get('description', ''),
-                "timestamp": ts
+                "timestamp": ts,
+                "inserted_at": now # Record the actual time it was saved
             }
-            logger.info(f"Adding event to Firestore: {data['title']}")
+            logger.info(f"Adding event to Firestore with ID {doc_id}: {data['title']}")
             
-            # Create doc and get reference
-            _, doc_ref = db.collection(COLLECTION_NAME).add(event_data)
+            # Create doc with the specific ID
+            doc_ref = db.collection(COLLECTION_NAME).document(doc_id)
+            doc_ref.set(event_data)
             
-            # Fetch the doc back to get the server timestamp
+            # Fetch back for verification and to get the resolved data
             new_doc = doc_ref.get()
             if not new_doc.exists:
                 logger.error(f"Created document {doc_ref.id} but could not retrieve it immediately.")
