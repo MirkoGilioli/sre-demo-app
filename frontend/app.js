@@ -1,57 +1,6 @@
-let backendUrl = "";
-let config = {};
-
-const statusEl = document.getElementById('status');
-const backendUrlInput = document.getElementById('backend-url');
-
-// Load YAML Config
-async function initApp() {
-    try {
-        const response = await fetch('config/config.yaml');
-        const yamlText = await response.text();
-        config = jsyaml.load(yamlText);
-        console.log("Configuration loaded from config.yaml:", config);
-        
-        // Priority: localStorage -> config.yaml -> hardcoded fallback
-        backendUrl = localStorage.getItem('backend_url');
-        if (!backendUrl) {
-            backendUrl = config.backend_url || "http://localhost:8081/";
-        }
-        
-        backendUrlInput.value = backendUrl;
-        if (backendUrl) loadEvents();
-    } catch (error) {
-        console.warn("Could not load config/config.yaml, falling back to defaults.", error);
-        backendUrl = localStorage.getItem('backend_url') || "http://localhost:8081/";
-        backendUrlInput.value = backendUrl;
-        if (backendUrl) loadEvents();
-    }
-}
-
-function saveConfig() {
-    let url = backendUrlInput.value.trim();
-    if (!url) {
-        statusEl.textContent = "Error: Backend URL cannot be empty.";
-        statusEl.className = "mt-2 text-sm text-red-500";
-        return;
-    }
-
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        url = 'http://' + url;
-    }
-
-    if (!url.endsWith('/')) {
-        url += '/';
-    }
-
-    backendUrl = url;
-    backendUrlInput.value = url;
-    localStorage.setItem('backend_url', url);
-    statusEl.textContent = "Backend URL saved: " + url;
-    statusEl.className = "mt-2 text-sm text-green-600";
-    console.log("Configuration updated. New Backend URL:", backendUrl);
-    loadEvents();
-}
+// frontend/app.js
+// The backend URL is now handled by the Nginx Reverse Proxy.
+// All API calls are now relative (e.g., /api/events).
 
 let currentMonth = new Date().getMonth();
 let currentYear = new Date().getFullYear();
@@ -73,7 +22,8 @@ function changeMonth(offset) {
 
 function selectDate(year, month, day) {
     selectedDate = new Date(year, month, day);
-    document.getElementById('selected-date-info').textContent = `Selected: ${selectedDate.toDateString()}`;
+    const infoEl = document.getElementById('selected-date-info');
+    if (infoEl) infoEl.textContent = `Selected: ${selectedDate.toDateString()}`;
     renderCalendar();
 }
 
@@ -81,6 +31,8 @@ function renderCalendar() {
     const monthYearEl = document.getElementById('calendar-month-year');
     const gridEl = document.getElementById('calendar-grid');
     
+    if (!monthYearEl || !gridEl) return;
+
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     monthYearEl.textContent = `${monthNames[currentMonth]} ${currentYear}`;
     
@@ -118,22 +70,15 @@ function renderCalendar() {
 }
 
 async function loadEvents() {
-    if (!backendUrl) {
-        statusEl.textContent = "Please set the Backend URL (e.g., http://localhost:8081/).";
-        statusEl.className = "mt-2 text-sm text-red-500";
-        return;
-    }
-
-    console.log("Fetching events from:", backendUrl + 'api/events');
     const listEl = document.getElementById('event-list');
+    if (!listEl) return;
+    
     listEl.innerHTML = '<p class="text-gray-500 italic">Loading events...</p>';
 
     try {
-        const response = await fetch(backendUrl + 'api/events');
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
-        }
+        // Simple relative path for Nginx to proxy
+        const response = await fetch('/api/events');
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
         allEvents = await response.json();
         console.log("Events loaded:", allEvents.length);
@@ -184,25 +129,21 @@ async function handleAddEvent() {
     console.log("Creating event:", payload);
 
     try {
-        const response = await fetch(backendUrl + 'api/events', {
+        const response = await fetch('/api/events', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
         
         if (response.ok) {
-            const result = await response.json();
-            console.log("Event created successfully:", result);
             titleInput.value = "";
             descInput.value = "";
             loadEvents();
         } else {
             const err = await response.json().catch(() => ({ error: "Internal Server Error" }));
-            console.error("Create failed:", err);
-            alert("Error creating event: " + (err.error || "Unknown error"));
+            alert("Error: " + (err.error || "Unknown error"));
         }
     } catch (error) {
-        console.error("Network error during creation:", error);
         alert("Network error: " + error.message);
     }
 }
@@ -210,43 +151,33 @@ async function handleAddEvent() {
 async function deleteEvent(id) {
     if (!confirm("Are you sure?")) return;
     try {
-        const response = await fetch(backendUrl + `api/events/${id}`, { method: 'DELETE' });
-        if (response.ok) {
-            loadEvents();
-        } else {
-            alert("Delete failed");
-        }
-    } catch (error) {
-        alert("Network error: " + error.message);
-    }
+        const response = await fetch(`/api/events/${id}`, { method: 'DELETE' });
+        if (response.ok) loadEvents();
+    } catch (error) { alert("Network error: " + error.message); }
 }
 
 // --- Chaos Management ---
-
-async function injectLatency() {
+async function injectLatency() { 
     try {
-        const response = await fetch(backendUrl + 'api/chaos/latency?ms=2000', { method: 'POST' });
-        const data = await response.json();
-        alert(data.status);
-    } catch (error) { alert("Failed to trigger chaos: " + error.message); }
+        await fetch('/api/chaos/latency?ms=2000', { method: 'POST' }); 
+        alert("2s Latency Injected");
+    } catch(e) { alert("Failed: " + e.message); }
 }
-
-async function injectErrors() {
+async function injectErrors() { 
     try {
-        const response = await fetch(backendUrl + 'api/chaos/error?rate=0.5', { method: 'POST' });
-        const data = await response.json();
-        alert(data.status);
-    } catch (error) { alert("Failed to trigger chaos: " + error.message); }
+        await fetch('/api/chaos/error?rate=0.5', { method: 'POST' }); 
+        alert("50% Error Rate Injected");
+    } catch(e) { alert("Failed: " + e.message); }
 }
-
-async function resetChaos() {
+async function resetChaos() { 
     try {
-        const response = await fetch(backendUrl + 'api/chaos/reset', { method: 'POST' });
-        const data = await response.json();
-        alert(data.status);
-    } catch (error) { alert("Failed to reset chaos: " + error.message); }
+        await fetch('/api/chaos/reset', { method: 'POST' }); 
+        alert("Chaos Reset");
+    } catch(e) { alert("Failed: " + e.message); }
 }
 
 // Init
-initApp();
-renderCalendar();
+document.addEventListener('DOMContentLoaded', () => {
+    renderCalendar();
+    loadEvents();
+});

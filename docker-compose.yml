@@ -23,7 +23,8 @@ services:
     build: ./frontend
     ports:
       - "8082:8080"
-    # No backend URL injected here as the SPA handles it via localStorage in the browser
+    environment:
+      - BACKEND_URL=http://backend:8080
     depends_on:
       - backend
 
