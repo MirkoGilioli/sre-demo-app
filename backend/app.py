@@ -132,7 +132,7 @@ def create_event():
         with tracer.start_as_current_span("create_event_firestore"):
             from datetime import datetime, timezone
             now = datetime.now(timezone.utc)
-
+            
             # Use provided calendar timestamp or fallback to 'now'
             ts = now
             if data.get('timestamp'):
