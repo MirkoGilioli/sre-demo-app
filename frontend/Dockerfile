@@ -3,14 +3,13 @@ FROM nginx:alpine
 # Copy static assets
 COPY . /usr/share/nginx/html
 
-# Copy Nginx template (to be processed at startup)
-COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
-
-# Copy entrypoint for env var injection
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# Official Nginx Docker images (since 1.19) support environment variables in templates.
+# Files ending in .template in /etc/nginx/templates/ will be processed with envsubst
+# and the output written to /etc/nginx/conf.d/ when the container starts.
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 
 EXPOSE 8080
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+# The default Nginx entrypoint handles the template processing.
+# We don't need a custom entrypoint script anymore.
 CMD ["nginx", "-g", "daemon off;"]

@@ -17,6 +17,7 @@ steps:
 
   # 5. Deploy Backend to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-backend'
     entrypoint: gcloud
     args:
       - 'run'
@@ -30,22 +31,22 @@ steps:
       - 'sre-demo-backend-sa@${PROJECT_ID}.iam.gserviceaccount.com'
       - '--allow-unauthenticated'
 
-  # 6. Deploy Frontend to Cloud Run
+  # 6. Fetch Backend URL and Deploy Frontend
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: gcloud
+    id: 'deploy-frontend'
+    entrypoint: 'bash'
     args:
-      - 'run'
-      - 'deploy'
-      - 'agenda-frontend'
-      - '--image'
-      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-frontend:${SHORT_SHA}'
-      - '--region'
-      - '${_REGION}'
-      - '--service-account'
-      - 'sre-demo-frontend-sa@${PROJECT_ID}.iam.gserviceaccount.com'
-      - '--allow-unauthenticated'
+      - '-c'
+      - |
+        BACKEND_URL=$(gcloud run services describe agenda-backend --region ${_REGION} --format 'value(status.url)')
+        echo "Deploying frontend with BACKEND_URL: $$BACKEND_URL"
+        gcloud run deploy agenda-frontend \
+          --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-frontend:${SHORT_SHA} \
+          --region ${_REGION} \
+          --service-account sre-demo-frontend-sa@${PROJECT_ID}.iam.gserviceaccount.com \
+          --set-env-vars BACKEND_URL=$$BACKEND_URL \
+          --allow-unauthenticated
 
-# Images to be pushed (optional if pushed in steps, but good for tracking)
 images:
   - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-backend:${SHORT_SHA}'
   - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-frontend:${SHORT_SHA}'
