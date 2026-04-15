@@ -1,0 +1,32 @@
+services:
+  # Firestore Emulator
+  firestore:
+    image: google/cloud-sdk:emulators
+    ports:
+      - "8089:8089"
+    command: gcloud beta emulators firestore start --host-port=0.0.0.0:8089
+
+  # Backend API
+  backend:
+    build: ./backend
+    ports:
+      - "8081:8080"
+    environment:
+      - PORT=8080
+      - FIRESTORE_EMULATOR_HOST=firestore:8089
+      - GOOGLE_CLOUD_PROJECT=sre-demo-project
+    depends_on:
+      - firestore
+
+  # Frontend Nginx
+  frontend:
+    build: ./frontend
+    ports:
+      - "8082:8080"
+    # No backend URL injected here as the SPA handles it via localStorage in the browser
+    depends_on:
+      - backend
+
+networks:
+  default:
+    name: sre-demo-network
