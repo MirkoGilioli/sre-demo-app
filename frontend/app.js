@@ -1,78 +1,6 @@
-let backendUrl = "";
-let config = {};
-
-const statusEl = document.getElementById('status');
-const backendUrlInput = document.getElementById('backend-url');
-
-// Load YAML Config
-async function initApp() {
-    try {
-        const response = await fetch('config/config.yaml');
-        const yamlText = await response.text();
-        config = jsyaml.load(yamlText);
-        console.log("Configuration loaded from config.yaml:", config);
-        
-        // Priority: localStorage -> config.yaml -> hardcoded fallback
-        backendUrl = localStorage.getItem('backend_url');
-        if (!backendUrl) {
-            backendUrl = config.backend_url || "http://localhost:8081/";
-        }
-        
-        backendUrlInput.value = backendUrl;
-        if (backendUrl) loadEvents();
-    } catch (error) {
-        console.warn("Could not load config/config.yaml, falling back to defaults.", error);
-        backendUrl = localStorage.getItem('backend_url') || "http://localhost:8081/";
-        backendUrlInput.value = backendUrl;
-        if (backendUrl) loadEvents();
-    }
-}
-
-function saveConfig() {
-    let url = backendUrlInput.value.trim();
-    if (!url) {
-        statusEl.textContent = "Error: Backend URL cannot be empty.";
-        statusEl.className = "mt-2 text-sm text-red-500";
-        return;
-    }
-
-function renderCalendar() {
-    const monthYearEl = document.getElementById('calendar-month-year');
-    const gridEl = document.getElementById('calendar-grid');
-    
-    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    monthYearEl.textContent = `${monthNames[currentMonth]} ${currentYear}`;
-    
-    gridEl.innerHTML = "";
-    
-    const firstDay = new Date(currentYear, currentMonth, 1).getDay();
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    
-    for (let i = 0; i < firstDay; i++) {
-        const div = document.createElement('div');
-        gridEl.appendChild(div);
-    }
-    
-    for (let day = 1; day <= daysInMonth; day++) {
-        const div = document.createElement('div');
-        const isSelected = selectedDate.getFullYear() === currentYear && selectedDate.getMonth() === currentMonth && selectedDate.getDate() === day;
-        
-        const hasEvents = allEvents.some(e => {
-            if (!e.timestamp || !e.timestamp.seconds) return false;
-            const d = new Date(e.timestamp.seconds * 1000);
-            return d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === day;
-        });
-
-        div.className = `p-2 border rounded cursor-pointer hover:bg-blue-50 transition ${isSelected ? 'bg-blue-600 text-white font-bold hover:bg-blue-700' : 'bg-white'}`;
-        if (hasEvents && !isSelected) {
-            div.classList.add('border-blue-500', 'border-2');
-        }
-        
-        div.textContent = day;
-        div.onclick = () => selectDate(currentYear, currentMonth, day);
-        gridEl.appendChild(div);
-    }
-}
+// frontend/app.js
+// The backend URL is now handled by the Nginx Reverse Proxy.
+// All API calls are now relative (e.g., /api/events).
 
 let currentMonth = new Date().getMonth();
 let currentYear = new Date().getFullYear();
@@ -94,7 +22,8 @@ function changeMonth(offset) {
 
 function selectDate(year, month, day) {
     selectedDate = new Date(year, month, day);
-    document.getElementById('selected-date-info').textContent = `Selected: ${selectedDate.toDateString()}`;
+    const infoEl = document.getElementById('selected-date-info');
+    if (infoEl) infoEl.textContent = `Selected: ${selectedDate.toDateString()}`;
     renderCalendar();
 }
 
@@ -102,6 +31,8 @@ function renderCalendar() {
     const monthYearEl = document.getElementById('calendar-month-year');
     const gridEl = document.getElementById('calendar-grid');
     
+    if (!monthYearEl || !gridEl) return;
+
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     monthYearEl.textContent = `${monthNames[currentMonth]} ${currentYear}`;
     
@@ -140,6 +71,8 @@ function renderCalendar() {
 
 async function loadEvents() {
     const listEl = document.getElementById('event-list');
+    if (!listEl) return;
+    
     listEl.innerHTML = '<p class="text-gray-500 italic">Loading events...</p>';
 
     try {
@@ -224,10 +157,27 @@ async function deleteEvent(id) {
 }
 
 // --- Chaos Management ---
-async function injectLatency() { await fetch('/api/chaos/latency?ms=2000', { method: 'POST' }); }
-async function injectErrors() { await fetch('/api/chaos/error?rate=0.5', { method: 'POST' }); }
-async function resetChaos() { await fetch('/api/chaos/reset', { method: 'POST' }); }
+async function injectLatency() { 
+    try {
+        await fetch('/api/chaos/latency?ms=2000', { method: 'POST' }); 
+        alert("2s Latency Injected");
+    } catch(e) { alert("Failed: " + e.message); }
+}
+async function injectErrors() { 
+    try {
+        await fetch('/api/chaos/error?rate=0.5', { method: 'POST' }); 
+        alert("50% Error Rate Injected");
+    } catch(e) { alert("Failed: " + e.message); }
+}
+async function resetChaos() { 
+    try {
+        await fetch('/api/chaos/reset', { method: 'POST' }); 
+        alert("Chaos Reset");
+    } catch(e) { alert("Failed: " + e.message); }
+}
 
 // Init
-initApp();
-renderCalendar();
+document.addEventListener('DOMContentLoaded', () => {
+    renderCalendar();
+    loadEvents();
+});
