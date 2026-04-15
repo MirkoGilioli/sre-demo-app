@@ -107,10 +107,20 @@ def create_event():
             return jsonify({"error": "Missing title"}), 400
         
         with tracer.start_as_current_span("create_event_firestore"):
+            # Use provided timestamp or fallback to server timestamp
+            ts = firestore.SERVER_TIMESTAMP
+            if data.get('timestamp'):
+                try:
+                    # Expecting ISO format from frontend
+                    from datetime import datetime
+                    ts = datetime.fromisoformat(data['timestamp'].replace('Z', '+00:00'))
+                except Exception as te:
+                    logger.warning(f"Failed to parse provided timestamp {data.get('timestamp')}: {te}")
+
             event_data = {
                 "title": data['title'],
                 "description": data.get('description', ''),
-                "timestamp": firestore.SERVER_TIMESTAMP
+                "timestamp": ts
             }
             logger.info(f"Adding event to Firestore: {data['title']}")
             
