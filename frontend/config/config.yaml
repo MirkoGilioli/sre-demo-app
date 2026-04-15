@@ -1,0 +1,7 @@
+# Frontend Configuration
+# This URL will be used as the default if nothing is saved in localStorage.
+backend_url: "http://localhost:8081/"
+
+# UI Settings
+default_month_view: "current"
+calendar_start_day: 0 # 0 for Sunday

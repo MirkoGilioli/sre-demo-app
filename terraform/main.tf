@@ -20,21 +20,56 @@ resource "google_project_service" "services" {
     "artifactregistry.googleapis.com",
     "cloudtrace.googleapis.com",
     "monitoring.googleapis.com",
-    "logging.googleapis.com"
+    "logging.googleapis.com",
+    "cloudbuild.googleapis.com",
+    "iam.googleapis.com"
   ])
   service            = each.key
   disable_on_destroy = false
 }
 
+# 6. Service Account for Cloud Build
+resource "google_service_account" "cloudbuild_sa" {
+  account_id   = "sre-demo-cloudbuild-sa"
+  display_name = "SRE Demo Cloud Build Service Account"
+}
+
+# 7. IAM Permissions for Cloud Build Service Account
+resource "google_project_iam_member" "cb_run_admin" {
+  project = var.project_id
+  role    = "roles/run.admin"
+  member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
+}
+
+resource "google_project_iam_member" "cb_artifact_writer" {
+  project = var.project_id
+  role    = "roles/artifactregistry.writer"
+  member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
+}
+
+resource "google_project_iam_member" "cb_log_writer" {
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
+}
+
+# Allow Cloud Build to act as the Backend Service Account
+resource "google_service_account_iam_member" "cb_as_backend" {
+  service_account_id = google_service_account.backend_sa.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
+}
+
 # 2. Firestore Database (Native Mode)
 resource "google_firestore_database" "database" {
   project     = var.project_id
-  name        = "(default)"
+  name        = "sre-demo"
   location_id = "nam5" # Multi-region or pick one
   type        = "FIRESTORE_NATIVE"
 
   depends_on = [google_project_service.services]
 }
+
 
 # 3. Artifact Registry for Docker Images
 resource "google_artifact_registry_repository" "repo" {
