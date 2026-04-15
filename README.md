@@ -63,7 +63,28 @@ Ensure the Cloud Build Service Account has the following roles:
 - `Artifact Registry Writer`
 4.  **Use**: Visit the `Frontend URL` provided at the end of the deployment script.
 
-## Generating Traffic Load (Locust)
+## Postmortem Demo Guide
+This section provides a script for a live "Mock Incident" to demonstrate the SRE investigation and postmortem process.
+
+### Phase 1: The Incident (Live Demo)
+1. **Start Traffic**: Run Locust with 10 users to generate a steady baseline.
+2. **Break Production**: In the Agenda UI, click **"50% Error Rate"**.
+3. **Detection**: Open the **GCP Monitoring -> Alerting** page and wait for the "High Burn Rate" alert to fire (takes ~2 minutes).
+4. **Resolution**: Click **"Reset Chaos"** in the app. Note the time of resolution.
+
+### Phase 2: The Investigation
+Show the students how to find the "evidence":
+- **Cloud Logging**: Filter for `textPayload:"Chaos induced error"` to find the exact start and end times.
+- **Cloud Trace**: Search for failed traces. Show how the trace highlights the exact line of code in the Flask middleware that injected the error.
+- **Cloud Monitoring**: Look at the SLO dashboard to see the **Error Budget** drop.
+
+### Phase 3: Writing the Postmortem
+Open `POSTMORTEM_TEMPLATE.md` and walk through filling it out. Focus on:
+- **Quantifying Impact**: How many users were affected?
+- **Blameless Root Cause**: Don't blame the person who clicked the button; blame the fact that the button was unprotected in production.
+- **Action Items**: Propose specific fixes (e.g., "Add an auth check to Chaos endpoints").
+
+---
 You can use Locust to generate a steady stream of traffic. This is essential for populating your monitoring dashboards and demonstrating the impact of your Chaos events.
 
 ### 1. Installation
