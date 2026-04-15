@@ -86,6 +86,21 @@ resource "google_service_account" "backend_sa" {
   display_name = "SRE Demo Backend Service Account"
 }
 
+# 4b. Service Account for Frontend
+resource "google_service_account" "frontend_sa" {
+  account_id   = "sre-demo-frontend-sa"
+  display_name = "SRE Demo Frontend Service Account"
+}
+
+# ... (IAM permissions for backend)
+
+# Allow Cloud Build to act as the Frontend Service Account
+resource "google_service_account_iam_member" "cb_as_frontend" {
+  service_account_id = google_service_account.frontend_sa.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
+}
+
 # 5. IAM Permissions for Backend Service Account
 resource "google_project_iam_member" "firestore_user" {
   project = var.project_id

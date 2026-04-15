@@ -41,6 +41,8 @@ steps:
       - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-frontend:${SHORT_SHA}'
       - '--region'
       - '${_REGION}'
+      - '--service-account'
+      - 'sre-demo-frontend-sa@${PROJECT_ID}.iam.gserviceaccount.com'
       - '--allow-unauthenticated'
 
 # Images to be pushed (optional if pushed in steps, but good for tracking)
