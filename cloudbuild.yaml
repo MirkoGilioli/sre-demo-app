@@ -1,0 +1,58 @@
+steps:
+  # 1. Build Backend Image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-backend:${SHORT_SHA}', 'backend']
+
+  # 2. Build Frontend Image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-frontend:${SHORT_SHA}', 'frontend']
+
+  # 3. Push Backend Image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-backend:${SHORT_SHA}']
+
+  # 4. Push Frontend Image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-frontend:${SHORT_SHA}']
+
+  # 5. Deploy Backend to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-backend'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'agenda-backend'
+      - '--image'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-backend:${SHORT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--service-account'
+      - 'sre-demo-backend-sa@${PROJECT_ID}.iam.gserviceaccount.com'
+      - '--allow-unauthenticated'
+
+  # 6. Deploy Frontend to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-frontend'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        BACKEND_URL=$(gcloud run services describe agenda-backend --region ${_REGION} --format 'value(status.url)')
+        gcloud run deploy agenda-frontend \
+          --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-frontend:${SHORT_SHA} \
+          --region ${_REGION} \
+          --service-account sre-demo-frontend-sa@${PROJECT_ID}.iam.gserviceaccount.com \
+          --set-env-vars BACKEND_URL=$$BACKEND_URL \
+          --allow-unauthenticated
+
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-backend:${SHORT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/agenda-frontend:${SHORT_SHA}'
+
+substitutions:
+  _REGION: us-central1
+  _REPO_NAME: sre-demo-images
+
+options:
+  logging: CLOUD_LOGGING_ONLY
