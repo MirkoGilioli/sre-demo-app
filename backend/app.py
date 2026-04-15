@@ -131,9 +131,7 @@ def create_event():
         
         with tracer.start_as_current_span("create_event_firestore"):
             from datetime import datetime, timezone
-            # Generate a unique ID based on the exact insertion time (microseconds)
             now = datetime.now(timezone.utc)
-            doc_id = str(int(now.timestamp() * 1000000))
 
             # Use provided calendar timestamp or fallback to 'now'
             ts = now
@@ -149,11 +147,10 @@ def create_event():
                 "timestamp": ts,
                 "inserted_at": now # Record the actual time it was saved
             }
-            logger.info(f"Adding event to Firestore with ID {doc_id}: {data['title']}")
+            logger.info(f"Adding event to Firestore: {data['title']}")
             
-            # Create doc with the specific ID
-            doc_ref = db.collection(COLLECTION_NAME).document(doc_id)
-            doc_ref.set(event_data)
+            # Let Firestore generate a random, distributed ID (Best Practice)
+            _, doc_ref = db.collection(COLLECTION_NAME).add(event_data)
             
             # Fetch back for verification and to get the resolved data
             new_doc = doc_ref.get()
