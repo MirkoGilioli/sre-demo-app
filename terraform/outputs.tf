@@ -6,6 +6,10 @@ output "backend_sa_email" {
   value = google_service_account.backend_sa.email
 }
 
+output "cloudbuild_sa_email" {
+  value = google_service_account.cloudbuild_sa.email
+}
+
 output "region" {
   value = var.region
 }

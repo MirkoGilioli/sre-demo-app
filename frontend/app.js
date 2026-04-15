@@ -1,30 +1,40 @@
-// frontend/app.js
-// The backend URL is now handled by the Nginx Reverse Proxy.
-// All API calls are now relative (e.g., /api/events).
+let backendUrl = "";
+let config = {};
 
-let currentMonth = new Date().getMonth();
-let currentYear = new Date().getFullYear();
-let selectedDate = new Date();
-selectedDate.setHours(0,0,0,0);
-let allEvents = [];
+const statusEl = document.getElementById('status');
+const backendUrlInput = document.getElementById('backend-url');
 
-function changeMonth(offset) {
-    currentMonth += offset;
-    if (currentMonth < 0) {
-        currentMonth = 11;
-        currentYear--;
-    } else if (currentMonth > 11) {
-        currentMonth = 0;
-        currentYear++;
+// Load YAML Config
+async function initApp() {
+    try {
+        const response = await fetch('config/config.yaml');
+        const yamlText = await response.text();
+        config = jsyaml.load(yamlText);
+        console.log("Configuration loaded from config.yaml:", config);
+        
+        // Priority: localStorage -> config.yaml -> hardcoded fallback
+        backendUrl = localStorage.getItem('backend_url');
+        if (!backendUrl) {
+            backendUrl = config.backend_url || "http://localhost:8081/";
+        }
+        
+        backendUrlInput.value = backendUrl;
+        if (backendUrl) loadEvents();
+    } catch (error) {
+        console.warn("Could not load config/config.yaml, falling back to defaults.", error);
+        backendUrl = localStorage.getItem('backend_url') || "http://localhost:8081/";
+        backendUrlInput.value = backendUrl;
+        if (backendUrl) loadEvents();
     }
-    renderCalendar();
 }
 
-function selectDate(year, month, day) {
-    selectedDate = new Date(year, month, day);
-    document.getElementById('selected-date-info').textContent = `Selected: ${selectedDate.toDateString()}`;
-    renderCalendar();
-}
+function saveConfig() {
+    let url = backendUrlInput.value.trim();
+    if (!url) {
+        statusEl.textContent = "Error: Backend URL cannot be empty.";
+        statusEl.className = "mt-2 text-sm text-red-500";
+        return;
+    }
 
 function renderCalendar() {
     const monthYearEl = document.getElementById('calendar-month-year');
@@ -64,6 +74,70 @@ function renderCalendar() {
     }
 }
 
+let currentMonth = new Date().getMonth();
+let currentYear = new Date().getFullYear();
+let selectedDate = new Date();
+selectedDate.setHours(0,0,0,0);
+let allEvents = [];
+
+function changeMonth(offset) {
+    currentMonth += offset;
+    if (currentMonth < 0) {
+        currentMonth = 11;
+        currentYear--;
+    } else if (currentMonth > 11) {
+        currentMonth = 0;
+        currentYear++;
+    }
+    renderCalendar();
+}
+
+function selectDate(year, month, day) {
+    selectedDate = new Date(year, month, day);
+    document.getElementById('selected-date-info').textContent = `Selected: ${selectedDate.toDateString()}`;
+    renderCalendar();
+}
+
+function renderCalendar() {
+    const monthYearEl = document.getElementById('calendar-month-year');
+    const gridEl = document.getElementById('calendar-grid');
+    
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    monthYearEl.textContent = `${monthNames[currentMonth]} ${currentYear}`;
+    
+    gridEl.innerHTML = "";
+    
+    const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    
+    // Empty cells for first week
+    for (let i = 0; i < firstDay; i++) {
+        const div = document.createElement('div');
+        gridEl.appendChild(div);
+    }
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+        const div = document.createElement('div');
+        const isSelected = selectedDate.getFullYear() === currentYear && selectedDate.getMonth() === currentMonth && selectedDate.getDate() === day;
+        
+        // Check if this day has events
+        const hasEvents = allEvents.some(e => {
+            if (!e.timestamp || !e.timestamp.seconds) return false;
+            const d = new Date(e.timestamp.seconds * 1000);
+            return d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === day;
+        });
+
+        div.className = `p-2 border rounded cursor-pointer hover:bg-blue-50 transition ${isSelected ? 'bg-blue-600 text-white font-bold hover:bg-blue-700' : 'bg-white'}`;
+        if (hasEvents && !isSelected) {
+            div.classList.add('border-blue-500', 'border-2');
+        }
+        
+        div.textContent = day;
+        div.onclick = () => selectDate(currentYear, currentMonth, day);
+        gridEl.appendChild(div);
+    }
+}
+
 async function loadEvents() {
     const listEl = document.getElementById('event-list');
     listEl.innerHTML = '<p class="text-gray-500 italic">Loading events...</p>';
@@ -74,11 +148,13 @@ async function loadEvents() {
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
         allEvents = await response.json();
-        renderCalendar();
+        console.log("Events loaded:", allEvents.length);
+        renderCalendar(); // Update calendar markers
         
         listEl.innerHTML = "";
+        
         if (allEvents.length === 0) {
-            listEl.innerHTML = '<p class="text-gray-500 italic text-center">No events scheduled.</p>';
+            listEl.innerHTML = '<p class="text-gray-500 italic text-center">No events scheduled. Enjoy your day!</p>';
         }
 
         allEvents.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
@@ -110,11 +186,14 @@ async function handleAddEvent() {
 
     if (!title) return alert("Title is required");
 
+    // Capture the selected date from the calendar
     const payload = {
         title,
         description,
         timestamp: selectedDate.toISOString()
     };
+
+    console.log("Creating event:", payload);
 
     try {
         const response = await fetch('/api/events', {
@@ -150,5 +229,5 @@ async function injectErrors() { await fetch('/api/chaos/error?rate=0.5', { metho
 async function resetChaos() { await fetch('/api/chaos/reset', { method: 'POST' }); }
 
 // Init
-loadEvents();
+initApp();
 renderCalendar();

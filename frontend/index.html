@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SRE Demo: Personal Agenda</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div class="container mx-auto px-4 py-8 max-w-2xl">
@@ -31,6 +32,25 @@
             </div>
         </div>
 
+        <!-- Calendar Section -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <button onclick="changeMonth(-1)" class="text-blue-500 font-bold p-2 hover:bg-gray-100 rounded">&lt; Prev</button>
+                <h2 id="calendar-month-year" class="text-xl font-bold text-gray-800">Month Year</h2>
+                <button onclick="changeMonth(1)" class="text-blue-500 font-bold p-2 hover:bg-gray-100 rounded">Next &gt;</button>
+            </div>
+            <div class="grid grid-cols-7 gap-1 text-center font-bold text-gray-600 mb-2">
+                <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+            </div>
+            <div id="calendar-grid" class="grid grid-cols-7 gap-1">
+                <!-- Days will be generated here -->
+            </div>
+            <div id="selected-date-info" class="mt-4 text-center text-blue-600 font-semibold italic">
+                Selected: Today
+            </div>
+        </div>
+
+        <!-- Add Event Section -->
         <div class="bg-white p-6 rounded-lg shadow-md mb-8">
             <h2 class="text-xl font-semibold mb-4 text-gray-800">Add New Event</h2>
             <div class="space-y-4">

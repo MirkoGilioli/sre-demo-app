@@ -36,11 +36,31 @@ To run the full stack locally (including a Firestore emulator):
     terraform init
     terraform apply -var="project_id=YOUR_PROJECT_ID"
     ```
-3.  **Deploy**:
-    ```bash
-    chmod +x deploy.sh
-    ./deploy.sh
-    ```
+### CI/CD Pipeline (Cloud Build)
+The project now includes a complete CI/CD pipeline defined in `cloudbuild.yaml`.
+
+#### 1. Manual Trigger
+To manually trigger the full build and deployment from your local machine using the custom Service Account:
+```bash
+# Obtain the email from terraform outputs first
+CB_SA_EMAIL=$(terraform -chdir=terraform output -raw cloudbuild_sa_email)
+
+gcloud builds submit --config cloudbuild.yaml --service-account="projects/$PROJECT_ID/serviceAccounts/$CB_SA_EMAIL" .
+```
+
+#### 2. Automatic GitHub Trigger
+To set up a fully automated pipeline:
+1.  Go to the **Cloud Build Console -> Triggers**.
+2.  Connect your GitHub repository.
+3.  Create a Trigger that points to the `main` branch.
+4.  Choose **Cloud Build configuration file (yaml)** and select `cloudbuild.yaml`.
+5.  Every `git push` will now automatically build and deploy your SRE demo app!
+
+#### 3. Required Permissions
+Ensure the Cloud Build Service Account has the following roles:
+- `Cloud Run Admin`
+- `Service Account User`
+- `Artifact Registry Writer`
 4.  **Use**: Visit the `Frontend URL` provided at the end of the deployment script.
 
 ## Generating Traffic Load (Locust)
