@@ -24,7 +24,6 @@ def load_config():
             return yaml.safe_load(f)
     except Exception as e:
         print(f"Error loading config from {config_path}: {e}")
-        # Return defaults if file not found
         return {
             "firestore": {"database_id": "sre-demo", "collection_name": "agenda_events"},
             "opentelemetry": {"service_name": "agenda-backend", "service_namespace": "sre-demo"},
@@ -53,7 +52,6 @@ resource = Resource.create({
 })
 
 tracer_provider = TracerProvider(resource=resource)
-# Only use CloudTraceSpanExporter if not in local dev or if explicitly enabled
 if os.getenv("K_SERVICE"): # Running on Cloud Run
     cloud_trace_exporter = CloudTraceSpanExporter()
     tracer_provider.add_span_processor(BatchSpanProcessor(cloud_trace_exporter))
@@ -75,19 +73,34 @@ else:
     logger.info(f"Connecting to Firestore Cloud DB {DB_NAME}")
     db = firestore.Client(database=DB_NAME)
 
-# Chaos State
+# Chaos State (Dynamic)
 chaos_state = {
     "latency_ms": config["chaos"]["default_latency_ms"],
     "error_rate": config["chaos"]["default_error_rate"]
 }
 
+# Systemic Chaos (via Environment Variables)
+BUGGY_VERSION = os.getenv("BUGGY_VERSION", "false").lower() == "true"
+SLOW_DB = os.getenv("SLOW_DB", "false").lower() == "true"
+
+def apply_db_latency():
+    if SLOW_DB:
+        logger.warning("SLOW_DB active: injecting 3s latency to Firestore call")
+        time.sleep(3.0)
+
 @app.before_request
 def apply_chaos():
-    # Apply Latency Chaos
+    # 1. Systemic Buggy Version (High error rate)
+    if BUGGY_VERSION:
+        if random.random() < 0.7: # 70% error rate for buggy version
+            logger.error("BUGGY_VERSION active: injecting error")
+            return jsonify({"error": "Internal Server Error (Buggy Build)"}), 500
+
+    # 2. Dynamic Latency (Manual trigger)
     if chaos_state["latency_ms"] > 0:
         time.sleep(chaos_state["latency_ms"] / 1000.0)
     
-    # Apply Error Chaos
+    # 3. Dynamic Error (Manual trigger)
     if chaos_state["error_rate"] > 0:
         if random.random() < chaos_state["error_rate"]:
             logger.error("Chaos induced error triggered!")
@@ -103,22 +116,18 @@ def healthz():
 def list_events():
     try:
         with tracer.start_as_current_span("list_events_firestore"):
+            apply_db_latency()
             docs = db.collection(COLLECTION_NAME).stream()
             events = []
             for doc in docs:
                 event = doc.to_dict()
                 event['id'] = doc.id
-                
-                # Convert datetime to serializable format for frontend
                 if 'timestamp' in event and hasattr(event['timestamp'], 'timestamp'):
-                    event['timestamp'] = {
-                        "seconds": int(event['timestamp'].timestamp())
-                    }
+                    event['timestamp'] = {"seconds": int(event['timestamp'].timestamp())}
                 events.append(event)
             return jsonify(events)
     except Exception as e:
         logger.exception("Failed to list events from Firestore")
-        # Return the actual error for easier debugging during the demo/setup
         return jsonify({"error": "Firestore Error", "details": str(e)}), 500
 
 @app.route('/api/events', methods=['POST'])
@@ -126,61 +135,46 @@ def create_event():
     try:
         data = request.get_json(silent=True)
         if not data or 'title' not in data:
-            logger.error(f"Invalid request data: {data}")
             return jsonify({"error": "Missing title"}), 400
         
         with tracer.start_as_current_span("create_event_firestore"):
+            apply_db_latency()
             from datetime import datetime, timezone
             now = datetime.now(timezone.utc)
-            
-            # Use provided calendar timestamp or fallback to 'now'
             ts = now
             if data.get('timestamp'):
                 try:
                     ts = datetime.fromisoformat(data['timestamp'].replace('Z', '+00:00'))
-                except Exception as te:
-                    logger.warning(f"Failed to parse provided timestamp {data.get('timestamp')}: {te}")
+                except Exception:
+                    pass
 
             event_data = {
                 "title": data['title'],
                 "description": data.get('description', ''),
                 "timestamp": ts,
-                "inserted_at": now # Record the actual time it was saved
+                "inserted_at": now
             }
-            logger.info(f"Adding event to Firestore: {json.dumps({'title': event_data['title'], 'id': doc_id if 'doc_id' in locals() else 'auto'})}")
-            
-            # Let Firestore generate a random, distributed ID (Best Practice)
             _, doc_ref = db.collection(COLLECTION_NAME).add(event_data)
-            
-            # Fetch back for verification and to get the resolved data
             new_doc = doc_ref.get()
-            if not new_doc.exists:
-                logger.error(f"Created document {doc_ref.id} but could not retrieve it immediately.")
-                return jsonify({"id": doc_ref.id, "title": data['title'], "status": "created_but_not_fetched"}), 201
-
             new_event = new_doc.to_dict()
             new_event['id'] = new_doc.id
-            
-            # Convert datetime to serializable format
             if 'timestamp' in new_event and hasattr(new_event['timestamp'], 'timestamp'):
-                new_event['timestamp'] = {
-                    "seconds": int(new_event['timestamp'].timestamp())
-                }
-            
-            logger.info(f"Successfully created and retrieved event: {new_event['id']}")
+                new_event['timestamp'] = {"seconds": int(new_event['timestamp'].timestamp())}
             return jsonify(new_event), 201
-            
     except Exception as e:
         logger.exception("Failed to create event in Firestore")
-        # Return the actual error for easier debugging during the demo/setup
         return jsonify({"error": "Firestore Error", "details": str(e)}), 500
 
 @app.route('/api/events/<event_id>', methods=['DELETE'])
 def delete_event(event_id):
-    with tracer.start_as_current_span("delete_event_firestore"):
-        db.collection(COLLECTION_NAME).document(event_id).delete()
-        logger.info(f"Deleted event: {event_id}")
-        return '', 204
+    try:
+        with tracer.start_as_current_span("delete_event_firestore"):
+            apply_db_latency()
+            db.collection(COLLECTION_NAME).document(event_id).delete()
+            return '', 204
+    except Exception as e:
+        logger.exception("Failed to delete event from Firestore")
+        return jsonify({"error": "Firestore Error", "details": str(e)}), 500
 
 # --- Chaos Engineering Endpoints ---
 
@@ -188,21 +182,18 @@ def delete_event(event_id):
 def set_latency():
     ms = request.args.get('ms', default=0, type=int)
     chaos_state["latency_ms"] = ms
-    logger.warning(f"Chaos Latency set to {ms}ms")
     return jsonify({"status": f"Latency set to {ms}ms"}), 200
 
 @app.route('/api/chaos/error', methods=['POST'])
 def set_error_rate():
     rate = request.args.get('rate', default=0.0, type=float)
     chaos_state["error_rate"] = rate
-    logger.warning(f"Chaos Error Rate set to {rate*100}%")
     return jsonify({"status": f"Error rate set to {rate*100}%"}), 200
 
 @app.route('/api/chaos/reset', methods=['POST'])
 def reset_chaos():
     chaos_state["latency_ms"] = 0
     chaos_state["error_rate"] = 0.0
-    logger.info("Chaos state reset")
     return jsonify({"status": "Chaos state reset to normal"}), 200
 
 if __name__ == '__main__':
