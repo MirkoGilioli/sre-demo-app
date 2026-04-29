@@ -30,7 +30,8 @@ function changeMonth(offset) {
         currentMonth = 0;
         currentYear++;
     }
-    renderCalendar();
+    // Reload events for the new month
+    loadEvents();
 }
 
 function selectDate(year, month, day) {
@@ -86,12 +87,16 @@ async function loadEvents() {
     listEl.innerHTML = '<p class="text-gray-500 italic">Loading events...</p>';
 
     try {
-        // Simple relative path for Nginx to proxy
-        const response = await fetch('/api/events');
+        // Calculate start and end of the current viewed month
+        const startOfMonth = new Date(currentYear, currentMonth, 1).toISOString();
+        const endOfMonth = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59).toISOString();
+
+        // Fetch events ONLY for this month
+        const response = await fetch(`/api/events?start_date=${startOfMonth}&end_date=${endOfMonth}&limit=1000`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
         allEvents = await response.json();
-        console.log("Events loaded:", allEvents.length);
+        console.log("Events loaded for month:", allEvents.length);
         
         // Update the efficient Set for rendering the calendar
         updateEventsSet();

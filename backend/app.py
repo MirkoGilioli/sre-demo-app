@@ -115,9 +115,40 @@ def healthz():
 @app.route('/api/events', methods=['GET'])
 def list_events():
     try:
+        # Pagination and filter parameters
+        limit = request.args.get('limit', default=100, type=int)
+        offset = request.args.get('offset', default=0, type=int)
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+
         with tracer.start_as_current_span("list_events_firestore"):
             apply_db_latency()
-            docs = db.collection(COLLECTION_NAME).stream()
+            
+            # Use order_by to ensure consistent pagination results
+            query = db.collection(COLLECTION_NAME).order_by("timestamp", direction=firestore.Query.DESCENDING)
+            
+            # Apply date filters if provided
+            from datetime import datetime, timezone
+            if start_date_str:
+                try:
+                    start_dt = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))
+                    query = query.where("timestamp", ">=", start_dt)
+                except ValueError:
+                    pass
+            
+            if end_date_str:
+                try:
+                    end_dt = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
+                    query = query.where("timestamp", "<=", end_dt)
+                except ValueError:
+                    pass
+
+            if offset > 0:
+                query = query.offset(offset)
+            
+            query = query.limit(limit)
+            
+            docs = query.stream()
             events = []
             for doc in docs:
                 event = doc.to_dict()
