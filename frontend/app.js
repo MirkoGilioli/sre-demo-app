@@ -7,6 +7,19 @@ let currentYear = new Date().getFullYear();
 let selectedDate = new Date();
 selectedDate.setHours(0,0,0,0);
 let allEvents = [];
+let eventsByDate = new Set();
+
+function updateEventsSet() {
+    eventsByDate.clear();
+    allEvents.forEach(e => {
+        if (e.timestamp && e.timestamp.seconds) {
+            const d = new Date(e.timestamp.seconds * 1000);
+            // Store a simple date string key like "2023-11-5"
+            const dateKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+            eventsByDate.add(dateKey);
+        }
+    });
+}
 
 function changeMonth(offset) {
     currentMonth += offset;
@@ -51,12 +64,9 @@ function renderCalendar() {
         const div = document.createElement('div');
         const isSelected = selectedDate.getFullYear() === currentYear && selectedDate.getMonth() === currentMonth && selectedDate.getDate() === day;
         
-        // Check if this day has events
-        const hasEvents = allEvents.some(e => {
-            if (!e.timestamp || !e.timestamp.seconds) return false;
-            const d = new Date(e.timestamp.seconds * 1000);
-            return d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === day;
-        });
+        // O(1) Check if this day has events
+        const dateKey = `${currentYear}-${currentMonth}-${day}`;
+        const hasEvents = eventsByDate.has(dateKey);
 
         div.className = `p-2 border rounded cursor-pointer hover:bg-blue-50 transition ${isSelected ? 'bg-blue-600 text-white font-bold hover:bg-blue-700' : 'bg-white'}`;
         if (hasEvents && !isSelected) {
@@ -82,6 +92,10 @@ async function loadEvents() {
         
         allEvents = await response.json();
         console.log("Events loaded:", allEvents.length);
+        
+        // Update the efficient Set for rendering the calendar
+        updateEventsSet();
+        
         renderCalendar(); // Update calendar markers
         
         listEl.innerHTML = "";
