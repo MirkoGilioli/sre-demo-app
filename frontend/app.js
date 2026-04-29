@@ -2,42 +2,45 @@
 // The backend URL is now handled by the Nginx Reverse Proxy.
 // All API calls are now relative (e.g., /api/events).
 
-let currentMonth = new Date().getMonth();
-let currentYear = new Date().getFullYear();
-let selectedDate = new Date();
-selectedDate.setHours(0,0,0,0);
-let allEvents = [];
-let eventsByDate = new Set();
+const state = {
+    currentMonth: new Date().getMonth(),
+    currentYear: new Date().getFullYear(),
+    selectedDate: new Date(),
+    allEvents: [],
+    eventsByDate: new Set()
+};
+
+state.selectedDate.setHours(0,0,0,0);
 
 function updateEventsSet() {
-    eventsByDate.clear();
-    allEvents.forEach(e => {
+    state.eventsByDate.clear();
+    state.allEvents.forEach(e => {
         if (e.timestamp && e.timestamp.seconds) {
             const d = new Date(e.timestamp.seconds * 1000);
-            // Store a simple date string key like "2023-11-5"
             const dateKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-            eventsByDate.add(dateKey);
+            state.eventsByDate.add(dateKey);
         }
     });
 }
 
 function changeMonth(offset) {
-    currentMonth += offset;
-    if (currentMonth < 0) {
-        currentMonth = 11;
-        currentYear--;
-    } else if (currentMonth > 11) {
-        currentMonth = 0;
-        currentYear++;
+    console.log("changeMonth called with offset:", offset);
+    state.currentMonth += offset;
+    if (state.currentMonth < 0) {
+        state.currentMonth = 11;
+        state.currentYear--;
+    } else if (state.currentMonth > 11) {
+        state.currentMonth = 0;
+        state.currentYear++;
     }
-    // Reload events for the new month
+    console.log(`New state: ${state.currentMonth}/${state.currentYear}`);
     loadEvents();
 }
 
 function selectDate(year, month, day) {
-    selectedDate = new Date(year, month, day);
+    state.selectedDate = new Date(year, month, day);
     const infoEl = document.getElementById('selected-date-info');
-    if (infoEl) infoEl.textContent = `Selected: ${selectedDate.toDateString()}`;
+    if (infoEl) infoEl.textContent = `Selected: ${state.selectedDate.toDateString()}`;
     renderCalendar();
 }
 
@@ -48,12 +51,12 @@ function renderCalendar() {
     if (!monthYearEl || !gridEl) return;
 
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    monthYearEl.textContent = `${monthNames[currentMonth]} ${currentYear}`;
+    monthYearEl.textContent = `${monthNames[state.currentMonth]} ${state.currentYear}`;
     
     gridEl.innerHTML = "";
     
-    const firstDay = new Date(currentYear, currentMonth, 1).getDay();
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const firstDay = new Date(state.currentYear, state.currentMonth, 1).getDay();
+    const daysInMonth = new Date(state.currentYear, state.currentMonth + 1, 0).getDate();
     
     // Empty cells for first week
     for (let i = 0; i < firstDay; i++) {
@@ -63,11 +66,11 @@ function renderCalendar() {
     
     for (let day = 1; day <= daysInMonth; day++) {
         const div = document.createElement('div');
-        const isSelected = selectedDate.getFullYear() === currentYear && selectedDate.getMonth() === currentMonth && selectedDate.getDate() === day;
+        const isSelected = state.selectedDate.getFullYear() === state.currentYear && state.selectedDate.getMonth() === state.currentMonth && state.selectedDate.getDate() === day;
         
         // O(1) Check if this day has events
-        const dateKey = `${currentYear}-${currentMonth}-${day}`;
-        const hasEvents = eventsByDate.has(dateKey);
+        const dateKey = `${state.currentYear}-${state.currentMonth}-${day}`;
+        const hasEvents = state.eventsByDate.has(dateKey);
 
         div.className = `p-2 border rounded cursor-pointer hover:bg-blue-50 transition ${isSelected ? 'bg-blue-600 text-white font-bold hover:bg-blue-700' : 'bg-white'}`;
         if (hasEvents && !isSelected) {
@@ -75,7 +78,7 @@ function renderCalendar() {
         }
         
         div.textContent = day;
-        div.onclick = () => selectDate(currentYear, currentMonth, day);
+        div.onclick = () => selectDate(state.currentYear, state.currentMonth, day);
         gridEl.appendChild(div);
     }
 }
@@ -87,31 +90,28 @@ async function loadEvents() {
     listEl.innerHTML = '<p class="text-gray-500 italic">Loading events...</p>';
 
     try {
-        // Calculate start and end of the current viewed month
-        const startOfMonth = new Date(currentYear, currentMonth, 1).toISOString();
-        const endOfMonth = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59).toISOString();
+        const startOfMonth = new Date(state.currentYear, state.currentMonth, 1).toISOString();
+        const endOfMonth = new Date(state.currentYear, state.currentMonth + 1, 0, 23, 59, 59).toISOString();
 
-        // Fetch events ONLY for this month
         const response = await fetch(`/api/events?start_date=${startOfMonth}&end_date=${endOfMonth}&limit=1000`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
-        allEvents = await response.json();
-        console.log("Events loaded for month:", allEvents.length);
+        state.allEvents = await response.json();
+        console.log("Events loaded for month:", state.allEvents.length);
         
-        // Update the efficient Set for rendering the calendar
         updateEventsSet();
-        
-        renderCalendar(); // Update calendar markers
+        renderCalendar();
         
         listEl.innerHTML = "";
         
-        if (allEvents.length === 0) {
+        if (state.allEvents.length === 0) {
             listEl.innerHTML = '<p class="text-gray-500 italic text-center">No events scheduled. Enjoy your day!</p>';
+            return;
         }
 
-        allEvents.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+        state.allEvents.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
 
-        allEvents.forEach(event => {
+        state.allEvents.forEach(event => {
             const dateStr = event.timestamp?.seconds ? new Date(event.timestamp.seconds * 1000).toLocaleDateString() : 'Unknown Date';
             const div = document.createElement('div');
             div.className = "p-4 border-l-4 border-blue-500 bg-gray-50 rounded shadow-sm flex justify-between items-center";
@@ -138,11 +138,10 @@ async function handleAddEvent() {
 
     if (!title) return alert("Title is required");
 
-    // Capture the selected date from the calendar
     const payload = {
         title,
         description,
-        timestamp: selectedDate.toISOString()
+        timestamp: state.selectedDate.toISOString()
     };
 
     console.log("Creating event:", payload);
@@ -197,6 +196,6 @@ async function resetChaos() {
 
 // Init
 document.addEventListener('DOMContentLoaded', () => {
-    renderCalendar();
+    console.log("App initialized");
     loadEvents();
 });
